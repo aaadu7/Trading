@@ -1,0 +1,101 @@
+import random
+import requests
+import numpy as np
+import time
+from ta.trend import PSARIndicator
+from ta.momentum import RSIIndicator
+from ta.volatility import BollingerBands
+from ta.trend import MACD
+from ta.volume import OnBalanceVolumeIndicator
+from sklearn.linear_model import LinearRegression
+
+def trade(symbol, price, quantity):
+    # Place a trade with the given symbol, price, and quantity
+    response = requests.post("https://api.example.com/trades", json={
+        "symbol": symbol,
+        "price": price,
+        "quantity": quantity
+    })
+    return response.status_code
+
+def optimize_buy_sell_position(symbol, price, historical_prices):
+    # Calculate the indicators
+    psar = PSARIndicator(historical_prices, fast=10, slow=20, max_periods=100)
+    rsi = RSIIndicator(historical_prices, timeperiod=14)
+    macd = MACD(historical_prices, fast_period=12, slow_period=26, signal_period=9)
+    bollinger_bands = BollingerBands(historical_prices, window=20, window_dev=2)
+    obv = OnBalanceVolumeIndicator(historical_prices)
+
+    # Calculate the features
+    features = np.array([
+        psar.psar_up,
+        rsi.rsi,
+        macd.macd_signal_line,
+        bollinger_bands.bollinger_lband,
+        obv.on_balance_volume()
+    ])
+
+    # Train the model
+    model = LinearRegression()
+    model.fit(features[:-1], features[-1])
+
+    # Predict the next price
+    prediction = model.predict(features[-1].reshape(1, 5))[0]
+
+    if prediction > 0:
+        # Suggest the user to buy the stock
+        return "Buy"
+    elif prediction < 0:
+        # Suggest the user to sell the stock
+        return "Sell"
+    else:
+        # Suggest the user to hold the stock
+        return "Hold"
+
+def get_live_prices(symbol):
+    # Retrieve live prices from the NSE/BSE API
+    response = requests.get("https://api.example.com/live_prices/{}".format(symbol))
+    live_prices = np.array([float(price) for price in response.json()])
+
+    return live_prices
+
+def backtest(symbol, start_date, end_date, initial_capital):
+    # Retrieve historical prices
+    historical_prices = get_live_prices(symbol)
+    stop_loss = 0
+    profit = 0
+
+    # Iterate over live prices
+    for price in live_prices:
+        # Check if there is an existing position and apply trailing stop-loss
+        if shares != 0 and price < stop_loss:
+            trade(symbol, price, -shares)
+            capital += shares * price  # Add back the sold shares to the capital
+            shares = 0
+
+        # Check the buy/sell conditions
+        action = optimize_buy_sell_position(symbol, price, historical_prices[:i + 1])
+
+        # Buy
+        if action == "Buy":
+            quantity = int(position_size / price)
+            trade(symbol, price, quantity)
+            shares += quantity
+            capital -= quantity * price
+            stop_loss = price * 0.95  # Set a trailing stop-loss at 5% below entry price
+
+        # Sell
+        elif action == "Sell" and shares > 0:
+            trade(symbol, price, -shares)
+            capital += shares * price
+            shares = 0
+
+        # Calculate profit
+        profit = capital + shares * price - initial_capital
+
+    return profit
+
+if __name__ == "__main__":
+    symbol = "TCS"
+    start_date = "2023-01-01"
+    end_date = "2023-01-03"
